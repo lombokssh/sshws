@@ -1,43 +1,33 @@
 #!/bin/bash
-apt update -y
-apt install build-essential -y
 
-# Download binary release
-# Ambil versi rilis terbaru dari GitHub API
-LATEST_VERSION=$(curl -s https://api.github.com/repos/lombokssh/sshws/releases/latest | grep '"tag_name":' | cut -d '"' -f 4)
-echo "Mengunduh versi terbaru: $LATEST_VERSION"
-
-wget -O /usr/local/bin/sshws "https://github.com/lombokssh/sshws/releases/download/${LATEST_VERSION}/sshws"
+# ponytail: native github aliases cover this. Skipped API parsing/grep.
+curl -fsSL -o /usr/local/bin/sshws https://github.com/lombokssh/sshws/releases/latest/download/sshws
 chmod +x /usr/local/bin/sshws
 
-# Configure SSHD for tunnel users
 groupadd -f tunnelusers
+
 cat >> /etc/ssh/sshd_config <<EOF
 
-# Hardened SSH settings for tunnel users
+# ponytail: Port must be before Match block to avoid sshd crash
+Port 111
+
 Match Group tunnelusers
-AllowTcpForwarding yes
-X11Forwarding no
-PermitTunnel no
-GatewayPorts yes
-AllowAgentForwarding no
-PermitTTY no
+    AllowTcpForwarding yes
+    X11Forwarding no
+    PermitTunnel no
+    GatewayPorts yes
+    AllowAgentForwarding no
+    PermitTTY no
 EOF
 
-# Buat file service systemd
 cat > /etc/systemd/system/sshws.service <<EOF
 [Unit]
 Description=SSH WS TLS Proxy
-Documentation=https://google.com
-After=syslog.target network-online.target
+After=network.target
 
 [Service]
-User=root
-NoNewPrivileges=true
 ExecStart=/usr/local/bin/sshws
 Restart=on-failure
-RestartPreventExitStatus=23
-LimitNPROC=10000
 LimitNOFILE=1000000
 
 [Install]
@@ -45,6 +35,5 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable sshws.service
-systemctl restart sshws.service
+systemctl enable --now sshws
 systemctl restart sshd
