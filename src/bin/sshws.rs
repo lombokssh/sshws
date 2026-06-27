@@ -1,11 +1,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
-use tokio::time::timeout;
 use clap::{Parser, Subcommand};
 use std::process::Command;
 use std::io::Write;
@@ -13,8 +10,6 @@ use std::io::Write;
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const BUFLEN: usize = 4096 * 4;
-const TIMEOUT_SECS: u64 = 60;
-const IDLE_CHECK_SECS: u64 = 3;
 const DEFAULT_HOST: &str = "127.0.0.1:111";
 const RESPONSE: &str = concat!(
     "HTTP/1.1 101 <b><i><font color=\"blue\">RYOTWELL.VERCEL.APP</font></b> Switching Protocols\r\n",
@@ -68,8 +63,6 @@ struct Server {
     addr: String,
     port: u16,
     pass: Arc<String>,
-    /// Active connection count (for logging / future use)
-    conn_count: Arc<Mutex<usize>>,
 }
 
 impl Server {
@@ -78,7 +71,6 @@ impl Server {
             addr: addr.to_owned(),
             port,
             pass: Arc::new(pass.to_owned()),
-            conn_count: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -95,15 +87,8 @@ impl Server {
             match listener.accept().await {
                 Ok((socket, addr)) => {
                     let pass = Arc::clone(&self.pass);
-                    let count = Arc::clone(&self.conn_count);
-                    {
-                        let mut c = count.lock().await;
-                        *c += 1;
-                    }
                     tokio::spawn(async move {
                         handle_connection(socket, addr, pass).await;
-                        let mut c = count.lock().await;
-                        *c -= 1;
                     });
                 }
                 Err(e) => {
@@ -277,73 +262,9 @@ async fn handle_socks5(
 
 // ── Bidirectional tunnel ─────────────────────────────────────────────────────
 
-/// Bidirectional copy with an inactivity timeout.
-/// Mirrors the Python `doCONNECT` logic: count idle 3-second ticks and break
-/// when `count >= TIMEOUT` (i.e. 60 ticks × 3 s = 180 s idle).
+// ponytail: tokio covers bidirectional copy. Skipped custom idle timeout, add when TCP keepalives aren't enough.
 async fn do_connect(client: &mut TcpStream, target: &mut TcpStream) -> io::Result<()> {
-    let (mut cr, mut cw) = client.split();
-    let (mut tr, mut tw) = target.split();
-
-    let client_to_target = async {
-        let mut buf = vec![0u8; BUFLEN];
-        let mut idle_ticks: u64 = 0;
-        loop {
-            match timeout(Duration::from_secs(IDLE_CHECK_SECS), cr.read(&mut buf)).await {
-                Ok(Ok(0)) | Err(_) => {
-                    idle_ticks += 1;
-                    if idle_ticks >= TIMEOUT_SECS / IDLE_CHECK_SECS {
-                        break;
-                    }
-                }
-                Ok(Ok(n)) => {
-                    idle_ticks = 0;
-                    if let Err(e) = tw.write_all(&buf[..n]).await {
-                        eprintln!("Data transfer error (c→t): {e}");
-                        break;
-                    }
-                }
-                Ok(Err(e)) => {
-                    eprintln!("Data transfer error (c→t read): {e}");
-                    break;
-                }
-            }
-        }
-    };
-
-    let target_to_client = async {
-        let mut buf = vec![0u8; BUFLEN];
-        let mut idle_ticks: u64 = 0;
-        loop {
-            match timeout(Duration::from_secs(IDLE_CHECK_SECS), tr.read(&mut buf)).await {
-                Ok(Ok(0)) | Err(_) => {
-                    idle_ticks += 1;
-                    if idle_ticks >= TIMEOUT_SECS / IDLE_CHECK_SECS {
-                        break;
-                    }
-                }
-                Ok(Ok(n)) => {
-                    idle_ticks = 0;
-                    if let Err(e) = cw.write_all(&buf[..n]).await {
-                        eprintln!("Data transfer error (t→c): {e}");
-                        break;
-                    }
-                }
-                Ok(Err(e)) => {
-                    eprintln!("Data transfer error (t→c read): {e}");
-                    break;
-                }
-            }
-        }
-    };
-
-    // Race both directions; whichever finishes first (EOF / timeout / error)
-    // effectively tears down the tunnel.
-    tokio::select! {
-        _ = client_to_target => {}
-        _ = target_to_client => {}
-    }
-
-    Ok(())
+    tokio::io::copy_bidirectional(client, target).await.map(|_| ())
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

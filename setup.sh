@@ -10,6 +10,20 @@ echo "Mengunduh versi terbaru: $LATEST_VERSION"
 wget -O /usr/local/bin/sshws "https://github.com/lombokssh/sshws/releases/download/${LATEST_VERSION}/sshws"
 chmod +x /usr/local/bin/sshws
 
+# Configure SSHD for tunnel users
+groupadd -f tunnelusers
+cat >> /etc/ssh/sshd_config <<EOF
+
+# Hardened SSH settings for tunnel users
+Match Group tunnelusers
+AllowTcpForwarding yes
+X11Forwarding no
+PermitTunnel no
+GatewayPorts yes
+AllowAgentForwarding no
+PermitTTY no
+EOF
+
 # Buat file service systemd
 cat > /etc/systemd/system/sshws.service <<EOF
 [Unit]
@@ -33,3 +47,4 @@ EOF
 systemctl daemon-reload
 systemctl enable sshws.service
 systemctl restart sshws.service
+systemctl restart sshd
