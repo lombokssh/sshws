@@ -1,6 +1,5 @@
 #!/bin/bash
 apt update -y
-apt install build-essential -y
 
 # Download binary release
 # Ambil versi rilis terbaru dari GitHub API
@@ -9,6 +8,9 @@ echo "Mengunduh versi terbaru: $LATEST_VERSION"
 
 wget -O /usr/local/bin/sshws "https://github.com/lombokssh/sshws/releases/download/${LATEST_VERSION}/sshws"
 chmod +x /usr/local/bin/sshws
+
+# Configure SSHD for tunnel users
+/usr/local/bin/sshws setup-sshd
 
 # Buat file service systemd
 cat > /etc/systemd/system/sshws.service <<EOF

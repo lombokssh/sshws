@@ -6,7 +6,10 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use std::process::Command;
+use std::fs::OpenOptions;
+use std::io::Write;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,6 +42,27 @@ struct Args {
     /// Optional password (X-Pass header for HTTP mode)
     #[arg(long = "pass", default_value = "")]
     pass: String,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Add a system user for SSH tunnel (no shell, no home)
+    AddUser {
+        /// Username
+        username: String,
+        /// Password
+        password: String,
+    },
+    /// Delete a system user
+    DelUser {
+        /// Username
+        username: String,
+    },
+    /// Configure sshd with hardened settings for tunnel users
+    SetupSshd,
 }
 
 // ── Server ───────────────────────────────────────────────────────────────────
@@ -357,9 +381,99 @@ fn find_header(headers: &str, name: &str) -> Option<String> {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    if let Some(cmd) = args.command {
+        match cmd {
+            Commands::AddUser { username, password } => add_user(&username, &password),
+            Commands::DelUser { username } => del_user(&username),
+            Commands::SetupSshd => setup_sshd(),
+        }
+        return;
+    }
+
     let server = Server::new(&args.bind, args.port, &args.pass);
     if let Err(e) = server.run().await {
         eprintln!("Fatal server error: {e}");
         std::process::exit(1);
+    }
+}
+
+// ── Admin Helpers ────────────────────────────────────────────────────────────
+
+fn add_user(username: &str, password: &str) {
+    let _ = Command::new("groupadd").arg("-f").arg("tunnelusers").output();
+    let output = Command::new("useradd")
+        .arg("-M")
+        .arg("-s")
+        .arg("/bin/false")
+        .arg("-G")
+        .arg("tunnelusers")
+        .arg(username)
+        .output()
+        .expect("Failed to execute useradd");
+
+    if !output.status.success() {
+        eprintln!("Failed to add user: {}", String::from_utf8_lossy(&output.stderr));
+        return;
+    }
+
+    let mut child = Command::new("chpasswd")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to execute chpasswd");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let creds = format!("{}:{}", username, password);
+        stdin.write_all(creds.as_bytes()).expect("Failed to write to stdin");
+    }
+
+    let status = child.wait().expect("Failed to wait on chpasswd");
+    if status.success() {
+        println!("User '{}' added successfully.", username);
+    } else {
+        eprintln!("Failed to set password for user '{}'.", username);
+    }
+}
+
+fn del_user(username: &str) {
+    let output = Command::new("userdel")
+        .arg(username)
+        .output()
+        .expect("Failed to execute userdel");
+    if output.status.success() {
+        println!("User '{}' deleted successfully.", username);
+    } else {
+        eprintln!("Failed to delete user: {}", String::from_utf8_lossy(&output.stderr));
+    }
+}
+
+fn setup_sshd() {
+    let sshd_config_path = "/etc/ssh/sshd_config";
+    let hardened_config = "\n# Hardened SSH settings for tunnel users
+Match Group tunnelusers
+    AllowTcpForwarding yes
+    X11Forwarding no
+    PermitTunnel no
+    GatewayPorts yes
+    AllowAgentForwarding no
+    PermitTTY no\n";
+    
+    let group_output = Command::new("groupadd").arg("-f").arg("tunnelusers").output().expect("Failed to execute groupadd");
+    if !group_output.status.success() {
+        eprintln!("Failed to add group tunnelusers: {}", String::from_utf8_lossy(&group_output.stderr));
+    }
+    
+    let mut file = OpenOptions::new().append(true).open(sshd_config_path).expect("Failed to open sshd_config");
+    if let Err(e) = write!(file, "{}", hardened_config) {
+        eprintln!("Failed to write to sshd_config: {}", e);
+    } else {
+        println!("sshd_config updated successfully.");
+    }
+    
+    let restart_output = Command::new("systemctl").arg("restart").arg("sshd").output().expect("Failed to execute systemctl restart sshd");
+    if restart_output.status.success() {
+        println!("sshd restarted successfully.");
+    } else {
+        eprintln!("Failed to restart sshd: {}", String::from_utf8_lossy(&restart_output.stderr));
     }
 }
