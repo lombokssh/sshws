@@ -8,7 +8,6 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use clap::{Parser, Subcommand};
 use std::process::Command;
-use std::fs::OpenOptions;
 use std::io::Write;
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -61,8 +60,6 @@ enum Commands {
         /// Username
         username: String,
     },
-    /// Configure sshd with hardened settings for tunnel users
-    SetupSshd,
 }
 
 // ── Server ───────────────────────────────────────────────────────────────────
@@ -386,7 +383,6 @@ async fn main() {
         match cmd {
             Commands::AddUser { username, password } => add_user(&username, &password),
             Commands::DelUser { username } => del_user(&username),
-            Commands::SetupSshd => setup_sshd(),
         }
         return;
     }
@@ -444,36 +440,5 @@ fn del_user(username: &str) {
         println!("User '{}' deleted successfully.", username);
     } else {
         eprintln!("Failed to delete user: {}", String::from_utf8_lossy(&output.stderr));
-    }
-}
-
-fn setup_sshd() {
-    let sshd_config_path = "/etc/ssh/sshd_config";
-    let hardened_config = "\n# Hardened SSH settings for tunnel users
-Match Group tunnelusers
-    AllowTcpForwarding yes
-    X11Forwarding no
-    PermitTunnel no
-    GatewayPorts yes
-    AllowAgentForwarding no
-    PermitTTY no\n";
-    
-    let group_output = Command::new("groupadd").arg("-f").arg("tunnelusers").output().expect("Failed to execute groupadd");
-    if !group_output.status.success() {
-        eprintln!("Failed to add group tunnelusers: {}", String::from_utf8_lossy(&group_output.stderr));
-    }
-    
-    let mut file = OpenOptions::new().append(true).open(sshd_config_path).expect("Failed to open sshd_config");
-    if let Err(e) = write!(file, "{}", hardened_config) {
-        eprintln!("Failed to write to sshd_config: {}", e);
-    } else {
-        println!("sshd_config updated successfully.");
-    }
-    
-    let restart_output = Command::new("systemctl").arg("restart").arg("sshd").output().expect("Failed to execute systemctl restart sshd");
-    if restart_output.status.success() {
-        println!("sshd restarted successfully.");
-    } else {
-        eprintln!("Failed to restart sshd: {}", String::from_utf8_lossy(&restart_output.stderr));
     }
 }
