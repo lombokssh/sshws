@@ -15,18 +15,6 @@ async fn check_xl_quota(number: &str) -> Result<String, reqwest::Error> {
     let url = format!("https://xl-ku.my.id/end.php?check=package&number={}&version=2", number);
     let client = reqwest::Client::new();
     let res = client.get(&url)
-        .header("accept", "*/*")
-        .header("accept-language", "id-ID,id;q=0.9,en-ID;q=0.8,en;q=0.7,en-US;q=0.6")
-        .header("dnt", "1")
-        .header("priority", "u=1, i")
-        .header("referer", "https://xl-ku.my.id/api")
-        .header("sec-ch-ua", "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"")
-        .header("sec-ch-ua-mobile", "?0")
-        .header("sec-ch-ua-platform", "\"macOS\"")
-        .header("sec-fetch-dest", "empty")
-        .header("sec-fetch-mode", "cors")
-        .header("sec-fetch-site", "same-origin")
-        .header("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
         .send()
         .await?;
 
@@ -183,9 +171,7 @@ async fn main() {
                             .parse_mode(teloxide::types::ParseMode::Html)
                             .await?;
                     } else {
-                        bot.send_message(msg.chat.id, format!(
-                            "🔒 Fitur cek kuota hanya tersedia di <b>private chat</b>.\n\nKlik tombol di bawah untuk chat langsung dengan bot:",
-                        ))
+                        bot.send_message(msg.chat.id, "🔒 Fitur cek kuota hanya tersedia di <b>private chat</b>.\n\nKlik tombol di bawah untuk chat langsung dengan bot:")
                         .parse_mode(teloxide::types::ParseMode::Html)
                         .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
                             teloxide::types::InlineKeyboardButton::url(
@@ -200,7 +186,7 @@ async fn main() {
                     let uuid = Uuid::new_v4().to_string();
                     let host = "free.engsel.qzz.io";
                     
-                    let (url, yaml) = if text == "VLESS" {
+                    let (url, yaml) = if clean_text == "VLESS" {
                         let url = format!("vless://{}@{}:443?encryption=none&security=tls&sni={}&fp=chrome&type=ws&host={}&path=%2Fvless#kita_temenan_aja", uuid, host, host, host);
                         let yaml = format!(r#"- name: "kita temenan aja"
   type: vless
@@ -234,7 +220,7 @@ async fn main() {
                         (url, yaml)
                     };
                     
-                    let response = format!("⚡ <b>Small, Fast & High Performance!</b>\n\n<b>{2}:</b>\n<code>{0}</code>\n\n<b>CLASH META / V2RAY:</b>\n<code>\n{1}\n</code>", url, yaml, text);
+                    let response = format!("⚡ <b>Small, Fast &amp; High Performance!</b>\n\n<b>{}:</b>\n<code>{}</code>\n\n<b>CLASH META / V2RAY:</b>\n<code>\n{}\n</code>", clean_text, url, yaml);
                     
                     bot.send_message(msg.chat.id, response)
                         .parse_mode(teloxide::types::ParseMode::Html)
