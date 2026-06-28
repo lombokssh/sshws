@@ -1,6 +1,7 @@
 ## Rule
 
-Always prefix shell commands with `rtk` to minimize token consumption.
+- Setiap perubahan pada project, wajib update pada README.md
+- Always prefix shell commands with `rtk` to minimize token consumption.
 
 Examples:
 
