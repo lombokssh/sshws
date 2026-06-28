@@ -2,6 +2,73 @@ use teloxide::{prelude::*, types::{KeyboardMarkup, KeyboardButton}};
 use uuid::Uuid;
 use serde_json::json;
 
+fn censor_number(n: &str) -> String {
+    if n.len() > 6 {
+        let masked = "*".repeat(n.len() - 6);
+        format!("{}{}{}", &n[..4], masked, &n[n.len()-2..])
+    } else {
+        n.to_string()
+    }
+}
+
+async fn check_xl_quota(number: &str) -> Result<String, reqwest::Error> {
+    let url = format!("https://xl-ku.my.id/end.php?check=package&number={}&version=2", number);
+    let client = reqwest::Client::new();
+    let res = client.get(&url)
+        .header("accept", "*/*")
+        .header("accept-language", "id-ID,id;q=0.9,en-ID;q=0.8,en;q=0.7,en-US;q=0.6")
+        .header("dnt", "1")
+        .header("priority", "u=1, i")
+        .header("referer", "https://xl-ku.my.id/api")
+        .header("sec-ch-ua", "\"Google Chrome\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"")
+        .header("sec-ch-ua-mobile", "?0")
+        .header("sec-ch-ua-platform", "\"macOS\"")
+        .header("sec-fetch-dest", "empty")
+        .header("sec-fetch-mode", "cors")
+        .header("sec-fetch-site", "same-origin")
+        .header("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+        .send()
+        .await?;
+
+    let json: serde_json::Value = res.json().await?;
+    
+    if !json["success"].as_bool().unwrap_or(false) {
+        return Ok(format!("❌ Gagal mengecek kuota atau nomor tidak valid:\n{}", json["message"].as_str().unwrap_or("Unknown Error")));
+    }
+
+    let api_num = json["data"]["subs_info"]["msisdn"].as_str().unwrap_or(number);
+    let mut result = format!("📱 <b>Nomor:</b> <code>{}</code>\n", censor_number(api_num));
+    
+    if let Some(exp_date) = json["data"]["subs_info"]["exp_date"].as_str() {
+        result.push_str(&format!("Masa Aktif: {}\n\n", exp_date));
+    }
+
+    if let Some(packages) = json["data"]["package_info"]["packages"].as_array() {
+        for pkg in packages {
+            if let Some(name) = pkg["name"].as_str() {
+                result.push_str(&format!("📦 <b>{}</b>\n", name));
+            }
+            if let Some(expiry) = pkg["expiry"].as_str() {
+                result.push_str(&format!("   Exp: {}\n", expiry));
+            }
+            if let Some(quotas) = pkg["quotas"].as_array() {
+                for q in quotas {
+                    let q_name = q["name"].as_str().unwrap_or("");
+                    let q_rem = q["remaining"].as_str().unwrap_or("");
+                    if !q_name.is_empty() && !q_rem.is_empty() {
+                        result.push_str(&format!("   - {}: <b>{}</b>\n", q_name, q_rem));
+                    }
+                }
+            }
+            result.push_str("\n");
+        }
+    } else {
+        result.push_str("Tidak ada paket aktif.\n");
+    }
+
+    Ok(result)
+}
+
 async fn save_or_update_user(user: teloxide::types::User, api_url: String, api_key: String) {
     let now = chrono::Utc::now().to_rfc3339();
         
@@ -78,13 +145,18 @@ async fn main() {
         if let Some(text) = msg.text() {
             match text {
                 "/start" | "/gen" => {
-                    let keyboard = KeyboardMarkup::new(vec![vec![
-                        KeyboardButton::new("VLESS"),
-                        KeyboardButton::new("TROJAN"),
-                    ]]).resize_keyboard().one_time_keyboard();
+                    let keyboard = KeyboardMarkup::new(vec![
+                        vec![KeyboardButton::new("VLESS"), KeyboardButton::new("TROJAN")],
+                        vec![KeyboardButton::new("Cek Kuota XL/Axis")],
+                    ]).resize_keyboard().one_time_keyboard();
                     
-                    bot.send_message(msg.chat.id, "🚀 <b>Small, Fast & High Performance</b> ⚡\n\nPlease choose a protocol to generate your account:")
+                    bot.send_message(msg.chat.id, "🚀 <b>Small, Fast & High Performance</b> ⚡\n\nPlease choose a menu:")
                         .reply_markup(keyboard)
+                        .parse_mode(teloxide::types::ParseMode::Html)
+                        .await?;
+                }
+                "Cek Kuota XL/Axis" => {
+                    bot.send_message(msg.chat.id, "Silakan kirimkan nomor XL atau Axis Anda (tanpa spasi):\n\nContoh: <code>0859xxxxxx</code>")
                         .parse_mode(teloxide::types::ParseMode::Html)
                         .await?;
                 }
@@ -132,7 +204,33 @@ async fn main() {
                         .parse_mode(teloxide::types::ParseMode::Html)
                         .await?;
                 }
-                _ => {}
+                _ => {
+                    let text = text.trim();
+                    let number = if text.starts_with("/xl ") || text.starts_with("/axis ") {
+                        text.split_whitespace().nth(1)
+                    } else if text.starts_with("08") || text.starts_with("628") || text.starts_with("+628") {
+                        Some(text)
+                    } else {
+                        None
+                    };
+
+                    if let Some(num) = number {
+                        let msg_reply = bot.send_message(msg.chat.id, format!("🔄 Mengecek kuota <code>{}</code>...", censor_number(num)))
+                            .parse_mode(teloxide::types::ParseMode::Html)
+                            .await?;
+                        
+                        match check_xl_quota(num).await {
+                            Ok(response) => {
+                                bot.edit_message_text(msg.chat.id, msg_reply.id, response)
+                                    .parse_mode(teloxide::types::ParseMode::Html)
+                                    .await?;
+                            }
+                            Err(_) => {
+                                bot.edit_message_text(msg.chat.id, msg_reply.id, "❌ Terjadi kesalahan saat menghubungi server.").await?;
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())
