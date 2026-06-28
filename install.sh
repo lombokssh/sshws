@@ -53,6 +53,7 @@ if [ ! -f /etc/engselbot/.env ]; then
 cat > /etc/engselbot/.env <<EOF
 RUST_LOG=info
 TELOXIDE_TOKEN=
+OWNER_ID=
 ENABLE_USER_SYNC=false
 DATABASE_URL=postgres://user:password@localhost:5432/engselbot
 EOF
