@@ -219,9 +219,14 @@ async fn main() {
                 }
                 _ => {
                     let text = text.trim();
+                    let is_private = msg.chat.is_private();
+                    // Di grup, hanya proses nomor jika pesan tersebut adalah reply ke bot
+                    let is_reply_to_bot = msg.reply_to_message().is_some();
+                    let should_check = is_private || is_reply_to_bot;
+
                     let number = if text.starts_with("/xl ") || text.starts_with("/axis ") {
                         text.split_whitespace().nth(1)
-                    } else if text.starts_with("08") || text.starts_with("628") || text.starts_with("+628") {
+                    } else if should_check && (text.starts_with("08") || text.starts_with("628") || text.starts_with("+628")) {
                         Some(text)
                     } else {
                         None
