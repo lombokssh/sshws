@@ -168,7 +168,7 @@ async fn main() {
                     let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
                     req.await?;
                 }
-                "Cek Kuota XL/Axis" => {
+                "Cek Kuota XL/Axis" | "/start cek" => {
                     if msg.chat.is_private() {
                         let req = bot.send_message(msg.chat.id, "Silakan kirimkan nomor XL atau Axis Anda (tanpa spasi):\n\nContoh: <code>0859xxxxxx</code>")
                             .parse_mode(teloxide::types::ParseMode::Html);
