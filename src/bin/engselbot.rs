@@ -158,7 +158,7 @@ async fn main() {
             match clean_text.as_str() {
                 "/start" | "/gen" => {
                     let keyboard = KeyboardMarkup::new(vec![
-                        vec![KeyboardButton::new("VLESS"), KeyboardButton::new("TROJAN")],
+                        vec![KeyboardButton::new("VLESS"), KeyboardButton::new("TROJAN"), KeyboardButton::new("VMESS")],
                         vec![KeyboardButton::new("Cek Kuota XL/Axis")],
                     ]).resize_keyboard().one_time_keyboard();
                     
@@ -187,7 +187,7 @@ async fn main() {
                         req.await?;
                     }
                 }
-                "VLESS" | "TROJAN" => {
+                "VLESS" | "TROJAN" | "VMESS" => {
                     let uuid = Uuid::new_v4().to_string();
                     let host = "free.engsel.qzz.io";
                     
@@ -207,7 +207,7 @@ async fn main() {
     headers:
       host: "{0}""#, host, uuid);
                         (url, yaml)
-                    } else {
+                    } else if clean_text == "TROJAN" {
                         let url = format!("trojan://{}@{}:443?security=tls&sni={}&type=ws&host={}&path=%2Ftrojan#kita_temenan_aja", uuid, host, host, host);
                         let yaml = format!(r#"- name: "kita temenan aja"
   type: trojan
@@ -223,11 +223,48 @@ async fn main() {
     headers:
       host: "{0}""#, host, uuid);
                         (url, yaml)
+                    } else {
+                        use base64::{Engine as _, engine::general_purpose::STANDARD};
+                        let vmess_json = json!({
+                            "v": "2",
+                            "ps": "kita temenan aja",
+                            "add": host,
+                            "port": "443",
+                            "id": uuid,
+                            "aid": "0",
+                            "scy": "auto",
+                            "net": "ws",
+                            "type": "none",
+                            "host": host,
+                            "path": "/vmess",
+                            "tls": "tls",
+                            "sni": host,
+                            "alpn": ""
+                        }).to_string();
+                        let url = format!("vmess://{}", STANDARD.encode(vmess_json));
+                        let yaml = format!(r#"- name: "kita temenan aja"
+  type: vmess
+  server: {0}
+  port: 443
+  uuid: {1}
+  alterId: 0
+  cipher: auto
+  network: ws
+  tls: true
+  udp: true
+  sni: "{0}"
+  ws-opts:
+    path: "/vmess"
+    headers:
+      host: "{0}""#, host, uuid);
+                        (url, yaml)
                     };
                     
                     let response = format!("⚡ <b>Small, Fast &amp; High Performance!</b>\n\n<b>{}:</b>\n<code>{}</code>\n\n<b>CLASH META / V2RAY:</b>\n<code>\n{}\n</code>", clean_text, url, yaml);
                     
-                    let req = bot.send_message(msg.chat.id, response)
+                    let qr_url = reqwest::Url::parse_with_params("https://api.qrserver.com/v1/create-qr-code/", &[("size", "400x400"), ("margin", "10"), ("data", &url)]).unwrap();
+                    let req = bot.send_photo(msg.chat.id, teloxide::types::InputFile::url(qr_url))
+                        .caption(response)
                         .parse_mode(teloxide::types::ParseMode::Html);
                     let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
                     req.await?;

@@ -1562,6 +1562,7 @@ dependencies = [
 name = "sshws"
 version = "1.0.0"
 dependencies = [
+ "base64",
  "chrono",
  "clap",
  "dotenvy",
