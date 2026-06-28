@@ -143,7 +143,16 @@ async fn main() {
             }
 
         if let Some(text) = msg.text() {
-            match text {
+            // Normalisasi teks untuk grup: hapus @bot_username dari perintah
+            let first_word = text.split_whitespace().next().unwrap_or("");
+            let clean_text = if first_word.starts_with('/') && first_word.contains('@') {
+                let idx = first_word.find('@').unwrap();
+                text.replace(&first_word[idx..], "")
+            } else {
+                text.to_string()
+            };
+
+            match clean_text.as_str() {
                 "/start" | "/gen" => {
                     let keyboard = KeyboardMarkup::new(vec![
                         vec![KeyboardButton::new("VLESS"), KeyboardButton::new("TROJAN")],
