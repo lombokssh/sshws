@@ -113,6 +113,9 @@ async fn save_or_update_user(user: teloxide::types::User, api_url: String, api_k
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok(); // ponytail: lazy .env loader, ignore failure if file is missing
+    pretty_env_logger::init();
+    
+    log::info!("Starting engselbot...");
     
     let enable_user_sync = std::env::var("ENABLE_USER_SYNC").map(|v| v == "true").unwrap_or(false);
     let api_url = std::env::var("GRAPHQL_API_URL").unwrap_or_default();
@@ -143,6 +146,7 @@ async fn main() {
             }
 
         if let Some(text) = msg.text() {
+            log::info!("Received text from chat {}: {}", msg.chat.id, text);
             // Normalisasi teks untuk grup: hapus @bot_username dari perintah
             let first_word = text.split_whitespace().next().unwrap_or("");
             let clean_text = if first_word.starts_with('/') && first_word.contains('@') {

@@ -51,6 +51,7 @@ EOF
 mkdir -p /etc/engselbot
 if [ ! -f /etc/engselbot/.env ]; then
 cat > /etc/engselbot/.env <<EOF
+RUST_LOG=info
 TELOXIDE_TOKEN=
 ENABLE_USER_SYNC=false
 GRAPHQL_API_URL=
