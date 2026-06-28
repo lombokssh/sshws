@@ -54,8 +54,7 @@ cat > /etc/engselbot/.env <<EOF
 RUST_LOG=info
 TELOXIDE_TOKEN=
 ENABLE_USER_SYNC=false
-GRAPHQL_API_URL=
-GRAPHQL_API_KEY=
+DATABASE_URL=postgres://user:password@localhost:5432/engselbot
 EOF
 fi
 
