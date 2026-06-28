@@ -126,12 +126,16 @@ async fn main() {
     }
     
     let bot = Bot::from_env();
+    let me = bot.get_me().await.expect("Failed to get bot info");
+    let bot_username = me.username().to_lowercase();
+    log::info!("Bot username: @{}", bot_username);
     
     // ponytail: kept simple repl instead of full dispatcher. ReplyKeyboardMarkup sends normal messages, 
     // skipping callback query boilerplate entirely.
     teloxide::repl(bot, move |bot: Bot, msg: Message| {
         let api_url = api_url.clone();
         let api_key = api_key.clone();
+        let bot_username = bot_username.clone();
         
         async move {
             if enable_user_sync {
@@ -151,6 +155,11 @@ async fn main() {
             let first_word = text.split_whitespace().next().unwrap_or("");
             let clean_text = if first_word.starts_with('/') && first_word.contains('@') {
                 let idx = first_word.find('@').unwrap();
+                let mentioned = first_word[idx+1..].to_lowercase();
+                // Jika mention bukan bot kita, skip
+                if mentioned != bot_username {
+                    return Ok(());
+                }
                 text.replace(&first_word[idx..], "")
             } else {
                 text.to_string()
@@ -169,9 +178,23 @@ async fn main() {
                         .await?;
                 }
                 "Cek Kuota XL/Axis" => {
-                    bot.send_message(msg.chat.id, "Silakan kirimkan nomor XL atau Axis Anda (tanpa spasi):\n\nContoh: <code>0859xxxxxx</code>")
+                    if msg.chat.is_private() {
+                        bot.send_message(msg.chat.id, "Silakan kirimkan nomor XL atau Axis Anda (tanpa spasi):\n\nContoh: <code>0859xxxxxx</code>")
+                            .parse_mode(teloxide::types::ParseMode::Html)
+                            .await?;
+                    } else {
+                        bot.send_message(msg.chat.id, format!(
+                            "🔒 Fitur cek kuota hanya tersedia di <b>private chat</b>.\n\nKlik tombol di bawah untuk chat langsung dengan bot:",
+                        ))
                         .parse_mode(teloxide::types::ParseMode::Html)
+                        .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
+                            teloxide::types::InlineKeyboardButton::url(
+                                "💬 Chat Privat",
+                                format!("https://t.me/{}?start=cek", bot_username).parse().unwrap(),
+                            )
+                        ]]))
                         .await?;
+                    }
                 }
                 "VLESS" | "TROJAN" => {
                     let uuid = Uuid::new_v4().to_string();
@@ -219,14 +242,8 @@ async fn main() {
                 }
                 _ => {
                     let text = text.trim();
-                    let is_private = msg.chat.is_private();
-                    // Di grup, hanya proses nomor jika pesan tersebut adalah reply ke bot
-                    let is_reply_to_bot = msg.reply_to_message().is_some();
-                    let should_check = is_private || is_reply_to_bot;
-
-                    let number = if text.starts_with("/xl ") || text.starts_with("/axis ") {
-                        text.split_whitespace().nth(1)
-                    } else if should_check && (text.starts_with("08") || text.starts_with("628") || text.starts_with("+628")) {
+                    // Cek nomor hanya di private chat
+                    let number = if msg.chat.is_private() && (text.starts_with("08") || text.starts_with("628") || text.starts_with("+628")) {
                         Some(text)
                     } else {
                         None
