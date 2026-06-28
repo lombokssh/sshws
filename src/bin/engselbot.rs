@@ -139,6 +139,8 @@ async fn main() {
 
         if let Some(text) = msg.text() {
             log::info!("Received text from chat {}: {}", msg.chat.id, text);
+            // ponytail: thread_id for forum/topic groups, None in regular groups/DM
+            let thread_id = msg.thread_id;
             // Normalisasi teks untuk grup: hapus @bot_username dari perintah
             let first_word = text.split_whitespace().next().unwrap_or("");
             let clean_text = if first_word.starts_with('/') && first_word.contains('@') {
@@ -160,26 +162,29 @@ async fn main() {
                         vec![KeyboardButton::new("Cek Kuota XL/Axis")],
                     ]).resize_keyboard().one_time_keyboard();
                     
-                    bot.send_message(msg.chat.id, "🚀 <b>Small, Fast & High Performance</b> ⚡\n\nPlease choose a menu:")
+                    let req = bot.send_message(msg.chat.id, "🚀 <b>Small, Fast & High Performance</b> ⚡\n\nPlease choose a menu:")
                         .reply_markup(keyboard)
-                        .parse_mode(teloxide::types::ParseMode::Html)
-                        .await?;
+                        .parse_mode(teloxide::types::ParseMode::Html);
+                    let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
+                    req.await?;
                 }
                 "Cek Kuota XL/Axis" => {
                     if msg.chat.is_private() {
-                        bot.send_message(msg.chat.id, "Silakan kirimkan nomor XL atau Axis Anda (tanpa spasi):\n\nContoh: <code>0859xxxxxx</code>")
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
+                        let req = bot.send_message(msg.chat.id, "Silakan kirimkan nomor XL atau Axis Anda (tanpa spasi):\n\nContoh: <code>0859xxxxxx</code>")
+                            .parse_mode(teloxide::types::ParseMode::Html);
+                        let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
+                        req.await?;
                     } else {
-                        bot.send_message(msg.chat.id, "🔒 Fitur cek kuota hanya tersedia di <b>private chat</b>.\n\nKlik tombol di bawah untuk chat langsung dengan bot:")
+                        let req = bot.send_message(msg.chat.id, "🔒 Fitur cek kuota hanya tersedia di <b>private chat</b>.\n\nKlik tombol di bawah untuk chat langsung dengan bot:")
                         .parse_mode(teloxide::types::ParseMode::Html)
                         .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
                             teloxide::types::InlineKeyboardButton::url(
                                 "💬 Chat Privat",
                                 format!("https://t.me/{}?start=cek", bot_username).parse().unwrap(),
                             )
-                        ]]))
-                        .await?;
+                        ]]));
+                        let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
+                        req.await?;
                     }
                 }
                 "VLESS" | "TROJAN" => {
@@ -222,9 +227,10 @@ async fn main() {
                     
                     let response = format!("⚡ <b>Small, Fast &amp; High Performance!</b>\n\n<b>{}:</b>\n<code>{}</code>\n\n<b>CLASH META / V2RAY:</b>\n<code>\n{}\n</code>", clean_text, url, yaml);
                     
-                    bot.send_message(msg.chat.id, response)
-                        .parse_mode(teloxide::types::ParseMode::Html)
-                        .await?;
+                    let req = bot.send_message(msg.chat.id, response)
+                        .parse_mode(teloxide::types::ParseMode::Html);
+                    let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
+                    req.await?;
                 }
                 _ => {
                     let text = text.trim();
@@ -236,9 +242,10 @@ async fn main() {
                     };
 
                     if let Some(num) = number {
-                        let msg_reply = bot.send_message(msg.chat.id, format!("🔄 Mengecek kuota <code>{}</code>...", censor_number(num)))
-                            .parse_mode(teloxide::types::ParseMode::Html)
-                            .await?;
+                        let req = bot.send_message(msg.chat.id, format!("🔄 Mengecek kuota <code>{}</code>...", censor_number(num)))
+                            .parse_mode(teloxide::types::ParseMode::Html);
+                        let req = if let Some(tid) = thread_id { req.message_thread_id(tid) } else { req };
+                        let msg_reply = req.await?;
                         
                         match check_xl_quota(num).await {
                             Ok(response) => {
