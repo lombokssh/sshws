@@ -10,8 +10,14 @@ use clap::Parser;
 const BUFLEN: usize = 4096 * 4;
 const SOCKS_VERSION: u8 = 5;
 
-/// Auth-only headers stripped before forwarding to backend.
-const STRIP_HEADERS: &[&str] = &["X-Pass", "X-Real-Host", "X-Split"];
+/// Sent to the client after a successful CONNECT tunnel is established.
+const RESPONSE: &str = concat!(
+    "HTTP/1.1 101 <b><i><font color=\"blue\">RYOTWELL.VERCEL.APP</font></b> Switching Protocols\r\n",
+    "Upgrade: websocket\r\n",
+    "Connection: Upgrade\r\n",
+    "Sec-WebSocket-Accept: foo\r\n",
+    "\r\n"
+);
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -137,10 +143,10 @@ async fn handle_http(
             return Ok(());
         }
         // Password correct — forward to whatever the client requested.
-        method_connect(client, log, &host_port, &headers).await
+        method_connect(client, log, &host_port).await
     } else if host_port.starts_with("127.0.0.1") || host_port.starts_with("localhost") {
         // No password configured — only allow local destinations.
-        method_connect(client, log, &host_port, &headers).await
+        method_connect(client, log, &host_port).await
     } else {
         client.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await?;
         Ok(())
@@ -151,7 +157,6 @@ async fn method_connect(
     client: &mut TcpStream,
     log: &mut String,
     path: &str,
-    original_request: &str,
 ) -> io::Result<()> {
     log.push_str(&format!(" CONNECT {path}"));
 
@@ -164,13 +169,9 @@ async fn method_connect(
         }
     };
 
-    // Forward the original HTTP request (minus auth headers) to the backend.
-    // The backend (e.g. Xray WebSocket) will respond with its own 101 which
-    // flows straight back to the client — no fake 101 needed.
-    let forwarded = strip_headers(original_request, STRIP_HEADERS);
-    target.write_all(forwarded.as_bytes()).await?;
-
+    client.write_all(RESPONSE.as_bytes()).await?;
     println!("{log}");
+    
     do_connect(client, &mut target).await
 }
 
@@ -283,20 +284,6 @@ fn find_header(headers: &str, name: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// Remove the listed headers from a raw HTTP request string.
-/// Empty lines (blank line / body separator) are preserved.
-fn strip_headers(request: &str, to_remove: &[&str]) -> String {
-    request
-        .split("\r\n")
-        .filter(|line| {
-            !to_remove
-                .iter()
-                .any(|h| line.starts_with(&format!("{h}: ")))
-        })
-        .collect::<Vec<_>>()
-        .join("\r\n")
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
