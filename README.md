@@ -5,7 +5,7 @@ A high-performance WebSocket/TLS Proxy (`sshws`) and its companion Telegram Bot 
 This repository contains the deployment scripts to automatically install, update, and manage both services on a Linux server.
 
 ## Features
-- **sshws**: A fast, low-overhead WebSocket proxy running on port 80/443 (depending on your setup) mapping to SSH on port 111.
+- **sshws**: A fast, SSH-free HTTP CONNECT / SOCKS5 proxy. Clients authenticate via an `X-Pass` header; traffic is forwarded **directly** to any destination — no SSH daemon, no Linux user creation needed.
 - **engselbot**: A Telegram bot written in Rust for managing user accounts, generating VPN configs (VLESS/TROJAN), and optionally syncing users to a GraphQL backend.
 
 ---
@@ -20,10 +20,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/lombokssh/sshws/main/install
 
 ### What the installer does:
 1. Downloads `sshws` and `engselbot` binaries to `/usr/local/bin/`.
-2. Creates the `tunnelusers` group for secure SSH forwarding.
-3. Modifies `/etc/ssh/sshd_config` to open Port 111 and apply a strict `Match Group` block for VPN users.
-4. Creates systemd services (`sshws.service` and `engselbot.service`).
-5. Generates a default configuration file for the bot at `/etc/engselbot/.env`.
+2. Creates systemd services (`sshws.service` and `engselbot.service`).
+3. Generates a default configuration file for the bot at `/etc/engselbot/.env`.
+
+> **Note:** `sshws` no longer requires an SSH daemon or system user accounts. All authentication is handled internally via the `--pass` flag.
 
 ---
 
@@ -76,8 +76,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/lombokssh/sshws/main/uninsta
 1. Stops and disables both `sshws` and `engselbot` services.
 2. Deletes the binaries and systemd unit files.
 3. Removes the `/etc/engselbot` directory.
-4. Deletes the `tunnelusers` group.
-5. Cleans up the port and Match Group modifications in `/etc/ssh/sshd_config` and restarts the SSH daemon.
 
 ---
 
