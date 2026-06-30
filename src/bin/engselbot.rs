@@ -61,6 +61,41 @@ async fn upsert_user(pool: &PgPool, user: &teloxide::types::User) {
     if let Err(e) = res { log::error!("upsert_user {}: {}", user.id.0, e); }
 }
 
+async fn save_message(pool: &PgPool, msg: &Message) {
+    // ponytail: detect type by presence, not a full enum
+    let kind = if msg.text().is_some() { "text" }
+        else if msg.photo().is_some() { "photo" }
+        else if msg.video().is_some() { "video" }
+        else if msg.document().is_some() { "document" }
+        else if msg.animation().is_some() { "animation" }
+        else if msg.audio().is_some() { "audio" }
+        else if msg.voice().is_some() { "voice" }
+        else if msg.sticker().is_some() { "sticker" }
+        else { "other" };
+        
+    let chat_type = if msg.chat.is_private() { "private" }
+        else if msg.chat.is_group() { "group" }
+        else if msg.chat.is_supergroup() { "supergroup" }
+        else if msg.chat.is_channel() { "channel" }
+        else { "unknown" };
+
+    let reply_to_id = msg.reply_to_message().map(|m| m.id.0);
+
+    let res = sqlx::query(
+        "INSERT INTO messages (message_id, chat_id, chat_title, chat_type, user_id, text, message_type, reply_to_message_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"
+    )
+    .bind(msg.id.0)
+    .bind(msg.chat.id.0)
+    .bind(msg.chat.title())
+    .bind(chat_type)
+    .bind(msg.from.as_ref().map(|u| u.id.0 as i64))
+    .bind(msg.text().or(msg.caption()))
+    .bind(kind)
+    .bind(reply_to_id)
+    .execute(pool).await;
+    if let Err(e) = res { log::error!("save_message: {}", e); }
+}
+
 // ponytail: pass the template message directly instead of a hand-rolled enum;
 // forward_message reuses Telegram's file cache — no file_id wrangling needed.
 async fn do_broadcast(bot: &Bot, pool: &PgPool, owner_chat_id: ChatId, template_msg: &Message, caption: &str) -> Result<(), teloxide::RequestError> {
@@ -124,12 +159,19 @@ async fn main() {
 
         async move {
             let sender_id = msg.from.as_ref().map(|u| u.id.0 as i64).unwrap_or(0);
+            
+            if let Ok(json_msg) = serde_json::to_string(&msg) {
+                log::info!("Incoming message JSON: {}", json_msg);
+            }
 
             if let Some(ref p) = pool {
                 if let Some(user) = msg.from.as_ref() {
-                    let (u, p) = (user.clone(), p.clone());
-                    tokio::spawn(async move { upsert_user(&p, &u).await; });
+                    let (u, p2) = (user.clone(), p.clone());
+                    tokio::spawn(async move { upsert_user(&p2, &u).await; });
                 }
+                // save every incoming message regardless of type
+                let (msg_snap, p2) = (msg.clone(), p.clone());
+                tokio::spawn(async move { save_message(&p2, &msg_snap).await; });
             }
 
             // --- BROADCAST (owner only: text /broadcast <msg>, or any media with caption /broadcast <caption>) ---
